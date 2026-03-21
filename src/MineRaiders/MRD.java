@@ -16,8 +16,8 @@ import java.io.IOException;
 import java.util.*;
 
 public class MRD extends JavaPlugin {
-    // 数据存储
-    public final Map<String, DoorData> doors = new HashMap<>();
+    // 数据存储：外层Map Key = 世界名，内层Map Key = 门ID
+    public final Map<String, Map<String, DoorData>> doors = new HashMap<>();
     final Map<Location, String> buttonToDoor = new HashMap<>();
     final Map<Player, String> bindingPlayers = new HashMap<>();
     final Map<Player, Selection> playerSelections = new HashMap<>();
@@ -49,6 +49,40 @@ public class MRD extends JavaPlugin {
         getLogger().info("门插件已禁用");
     }
 
+    // ========== 门数据访问辅助方法 ==========
+    public DoorData getDoor(String worldName, String id) {
+        Map<String, DoorData> worldDoors = doors.get(worldName);
+        return worldDoors != null ? worldDoors.get(id) : null;
+    }
+
+    public DoorData getDoor(World world, String id) {
+        return getDoor(world.getName(), id);
+    }
+
+    public void putDoor(String worldName, String id, DoorData data) {
+        doors.computeIfAbsent(worldName, k -> new HashMap<>()).put(id, data);
+    }
+
+    public DoorData removeDoor(String worldName, String id) {
+        Map<String, DoorData> worldDoors = doors.get(worldName);
+        if (worldDoors != null) {
+            return worldDoors.remove(id);
+        }
+        return null;
+    }
+
+    // 获取所有门（用于菜单显示）
+    public List<Map.Entry<String, String>> getAllDoorEntries() {
+        List<Map.Entry<String, String>> entries = new ArrayList<>();
+        for (Map.Entry<String, Map<String, DoorData>> worldEntry : doors.entrySet()) {
+            String worldName = worldEntry.getKey();
+            for (String id : worldEntry.getValue().keySet()) {
+                entries.add(new AbstractMap.SimpleEntry<>(worldName, id));
+            }
+        }
+        return entries;
+    }
+
     // ========== 数据加载/保存 ==========
     private void loadDoors() {
         doorsFile = new File(getDataFolder(), "doors.yml");
@@ -74,25 +108,28 @@ public class MRD extends JavaPlugin {
 
             DoorData data = new DoorData(world, minX, maxX, minY, maxY, minZ, maxZ, blockType);
             data.setOpen(open);
-            doors.put(id, data);
+            putDoor(worldName, id, data);
         }
-        getLogger().info("已加载 " + doors.size() + " 个门");
+        getLogger().info("已加载 " + doors.values().stream().mapToInt(Map::size).sum() + " 个门");
     }
 
     void saveDoors() {
         doorsConfig = new YamlConfiguration();
-        for (Map.Entry<String, DoorData> entry : doors.entrySet()) {
-            String id = entry.getKey();
-            DoorData data = entry.getValue();
-            doorsConfig.set(id + ".world", data.getWorld().getName());
-            doorsConfig.set(id + ".minX", data.getMinX());
-            doorsConfig.set(id + ".maxX", data.getMaxX());
-            doorsConfig.set(id + ".minY", data.getMinY());
-            doorsConfig.set(id + ".maxY", data.getMaxY());
-            doorsConfig.set(id + ".minZ", data.getMinZ());
-            doorsConfig.set(id + ".maxZ", data.getMaxZ());
-            doorsConfig.set(id + ".open", data.isOpen());
-            doorsConfig.set(id + ".blockType", data.getBlockType().name());
+        for (Map.Entry<String, Map<String, DoorData>> worldEntry : doors.entrySet()) {
+            String worldName = worldEntry.getKey();
+            for (Map.Entry<String, DoorData> doorEntry : worldEntry.getValue().entrySet()) {
+                String id = doorEntry.getKey();
+                DoorData data = doorEntry.getValue();
+                doorsConfig.set(id + ".world", worldName);
+                doorsConfig.set(id + ".minX", data.getMinX());
+                doorsConfig.set(id + ".maxX", data.getMaxX());
+                doorsConfig.set(id + ".minY", data.getMinY());
+                doorsConfig.set(id + ".maxY", data.getMaxY());
+                doorsConfig.set(id + ".minZ", data.getMinZ());
+                doorsConfig.set(id + ".maxZ", data.getMaxZ());
+                doorsConfig.set(id + ".open", data.isOpen());
+                doorsConfig.set(id + ".blockType", data.getBlockType().name());
+            }
         }
         try {
             doorsConfig.save(doorsFile);
@@ -116,7 +153,7 @@ public class MRD extends JavaPlugin {
                 int z = Integer.parseInt(parts[3]);
                 Location loc = new Location(world, x, y, z);
                 String doorId = buttonsConfig.getString(key);
-                if (doorId != null && doors.containsKey(doorId)) {
+                if (doorId != null && getDoor(world, doorId) != null) {
                     buttonToDoor.put(loc, doorId);
                 }
             } catch (NumberFormatException ignored) {}
@@ -140,7 +177,8 @@ public class MRD extends JavaPlugin {
 
     // ========== 核心门操作 ==========
     public boolean createDoor(String id, World world, int minX, int maxX, int minY, int maxY, int minZ, int maxZ, Material blockType) {
-        if (doors.containsKey(id)) return false;
+        String worldName = world.getName();
+        if (getDoor(worldName, id) != null) return false;
 
         // 填充方块
         for (int x = minX; x <= maxX; x++) {
@@ -148,7 +186,6 @@ public class MRD extends JavaPlugin {
                 for (int z = minZ; z <= maxZ; z++) {
                     Block b = world.getBlockAt(x, y, z);
                     b.setType(blockType);
-                    // 如果是墙，设置连接
                     if (blockType.name().contains("WALL")) {
                         setWallTall(b);
                     }
@@ -158,13 +195,13 @@ public class MRD extends JavaPlugin {
         }
 
         DoorData data = new DoorData(world, minX, maxX, minY, maxY, minZ, maxZ, blockType);
-        doors.put(id, data);
+        putDoor(worldName, id, data);
         saveDoors();
         return true;
     }
 
-    public boolean removeDoor(String id) {
-        DoorData data = doors.remove(id);
+    public boolean removeDoorBoolean(String worldName, String id) {
+        DoorData data = removeDoor(worldName, id);
         if (data == null) return false;
 
         if (data.getTask() != null) data.getTask().cancel();
@@ -183,19 +220,19 @@ public class MRD extends JavaPlugin {
             }
         }
 
-        buttonToDoor.entrySet().removeIf(entry -> entry.getValue().equals(id));
+        // 删除该门的所有按钮绑定
+        buttonToDoor.entrySet().removeIf(entry -> entry.getValue().equals(id) && entry.getKey().getWorld().equals(world));
         saveButtons();
         saveDoors();
         return true;
     }
-    // 原有无参 toggleDoor，使用默认延迟
-    public void toggleDoor(String id) {
-        toggleDoor(id, 4); // 默认每层延迟 2 tick
+
+    public void toggleDoor(String worldName, String id) {
+        toggleDoor(worldName, id, 4);
     }
 
-    // 新增带延迟参数的方法
-    public void toggleDoor(String id, int delayPerLayer) {
-        DoorData data = doors.get(id);
+    public void toggleDoor(String worldName, String id, int delayPerLayer) {
+        DoorData data = getDoor(worldName, id);
         if (data == null || data.isAnimating()) return;
 
         data.setAnimating(true);
@@ -207,16 +244,15 @@ public class MRD extends JavaPlugin {
         boolean newOpen = !isOpen;
         Material blockType = data.getBlockType();
 
-        int layers = maxY - minY + 1;          // 总层数
-        int[] currentLayer = {0};               // 当前已处理的层数（0 ~ layers-1）
-        int[] direction = {isOpen ? 1 : -1};    // 开门向上(+1)，关门向下(-1)
-        int[] y = {isOpen ? minY : maxY};        // 当前处理的 y 坐标
+        int layers = maxY - minY + 1;
+        int[] currentLayer = {0};
+        int[] direction = {isOpen ? 1 : -1};
+        int[] y = {isOpen ? minY : maxY};
 
         BukkitTask task = new BukkitRunnable() {
             @Override
             public void run() {
                 if (currentLayer[0] >= layers) {
-                    // 动画完成
                     data.setOpen(newOpen);
                     data.setAnimating(false);
                     data.setTask(null);
@@ -225,20 +261,18 @@ public class MRD extends JavaPlugin {
                     return;
                 }
 
-                // 处理当前层
                 for (int x = minX; x <= maxX; x++) {
                     for (int z = minZ; z <= maxZ; z++) {
                         Block b = world.getBlockAt(x, y[0], z);
-                        b.setType(isOpen ? Material.AIR : blockType); // 关门时 isOpen 为 false，走 else 分支
-                        if (!isOpen && blockType.name().contains("WALL")) { // 关门且是墙
+                        b.setType(isOpen ? Material.AIR : blockType);
+                        if (!isOpen && blockType.name().contains("WALL")) {
                             setWallTall(b);
                         }
-                        MRD.updateNeighbors(world, x, y[0], z);
+                        updateNeighbors(world, x, y[0], z);
                     }
                 }
                 Sound s = Sound.BLOCK_IRON_BREAK;
                 float f = 1f;
-                // 粒子效果（仅在最低层）
                 if (y[0] == minY) {
                     for (int i = 0; i < 10; i++) {
                         double x = minX + Math.random() * (maxX - minX + 1);
@@ -248,31 +282,42 @@ public class MRD extends JavaPlugin {
                     s = Sound.BLOCK_CHAIN_BREAK;
                     f = 0.8f;
                 }
-                Location center1 = new Location(world, (minX + maxX) / 2.0, y[0], (minZ + maxZ) / 2.0);
-                world.playSound(center1,s,1,f);
-                world.playSound(center1,s,1,f);
-                // 移动到下一层
+                Location center = new Location(world, (minX + maxX) / 2.0, y[0], (minZ + maxZ) / 2.0);
+                world.playSound(center, s, 1, f);
+                world.playSound(center, s, 1, f);
+
                 y[0] += direction[0];
                 currentLayer[0]++;
             }
-        }.runTaskTimer(this, 0L, delayPerLayer); // 每 delayPerLayer tick 执行一次
+        }.runTaskTimer(this, 0L, delayPerLayer);
 
         data.setTask(task);
     }
 
+    public void setAllDoors(boolean open) {
+        for (Map.Entry<String, Map<String, DoorData>> worldEntry : doors.entrySet()) {
+            String worldName = worldEntry.getKey();
+            for (String id : worldEntry.getValue().keySet()) {
+                DoorData data = getDoor(worldName, id);
+                if (data != null && data.isOpen() != open && !data.isAnimating()) {
+                    toggleDoor(worldName, id);
+                }
+            }
+        }
+    }
+
     // ========== 工具方法 ==========
     public static void updateNeighbors(World world, int x, int y, int z) {
-        // 只更新六个邻居，不更新自身（自身已手动设置）
-        world.getBlockAt(x, y, z - 1).getState().update(true, true); // 北
-        world.getBlockAt(x, y, z + 1).getState().update(true, true); // 南
-        world.getBlockAt(x - 1, y, z).getState().update(true, true); // 西
-        world.getBlockAt(x + 1, y, z).getState().update(true, true); // 东
-        world.getBlockAt(x, y + 1, z).getState().update(true, true); // 上
-        world.getBlockAt(x, y - 1, z).getState().update(true, true); // 下
+        world.getBlockAt(x, y, z - 1).getState().update(true, true);
+        world.getBlockAt(x, y, z + 1).getState().update(true, true);
+        world.getBlockAt(x - 1, y, z).getState().update(true, true);
+        world.getBlockAt(x + 1, y, z).getState().update(true, true);
+        world.getBlockAt(x, y + 1, z).getState().update(true, true);
+        world.getBlockAt(x, y - 1, z).getState().update(true, true);
     }
+
     private void setWallTall(Block block) {
         if (block.getBlockData() instanceof Wall wall) {
-            // 检查四个水平方向
             setWallSide(wall, block, BlockFace.NORTH);
             setWallSide(wall, block, BlockFace.EAST);
             setWallSide(wall, block, BlockFace.SOUTH);
@@ -285,18 +330,26 @@ public class MRD extends JavaPlugin {
     private void setWallSide(Wall wall, Block block, BlockFace face) {
         Block neighbor = block.getRelative(face);
         if (neighbor.getType().isSolid()) {
-            wall.setHeight(face,Wall.Height.TALL);
+            wall.setHeight(face, Wall.Height.TALL);
         } else {
-            wall.setHeight(face,Wall.Height.NONE);
+            wall.setHeight(face, Wall.Height.NONE);
         }
     }
 
-    public void setAllDoors(boolean open) {
-        for (Map.Entry<String, DoorData> entry : doors.entrySet()) {
-            DoorData data = entry.getValue();
-            if (data.isOpen() != open && !data.isAnimating()) {
-                toggleDoor(entry.getKey());
+    public void reload() {
+        for (Map.Entry<String, Map<String, DoorData>> worldEntry : doors.entrySet()) {
+            for (DoorData data : worldEntry.getValue().values()) {
+                if (data.getTask() != null) {
+                    data.getTask().cancel();
+                    data.setAnimating(false);
+                    data.setTask(null);
+                }
             }
         }
+        doors.clear();
+        buttonToDoor.clear();
+        loadDoors();
+        loadButtons();
+        getLogger().info("门配置已重新加载");
     }
 }

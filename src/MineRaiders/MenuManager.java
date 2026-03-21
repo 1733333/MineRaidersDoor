@@ -13,7 +13,6 @@ import java.util.*;
 public class MenuManager {
     private final MRD plugin;
 
-    // 菜单 Holder 内部类
     public static class DoorMainMenuHolder implements InventoryHolder {
         private final int page;
         public DoorMainMenuHolder(int page) { this.page = page; }
@@ -22,8 +21,13 @@ public class MenuManager {
     }
 
     public static class DoorActionMenuHolder implements InventoryHolder {
+        private final String worldName;
         private final String doorId;
-        public DoorActionMenuHolder(String doorId) { this.doorId = doorId; }
+        public DoorActionMenuHolder(String worldName, String doorId) {
+            this.worldName = worldName;
+            this.doorId = doorId;
+        }
+        public String getWorldName() { return worldName; }
         public String getDoorId() { return doorId; }
         @Override public Inventory getInventory() { return null; }
     }
@@ -33,8 +37,8 @@ public class MenuManager {
     }
 
     public void openMainMenu(Player player, int page) {
-        List<String> doorIds = new ArrayList<>(plugin.doors.keySet());
-        int totalPages = (int) Math.ceil(doorIds.size() / 45.0);
+        List<Map.Entry<String, String>> entries = plugin.getAllDoorEntries();
+        int totalPages = (int) Math.ceil(entries.size() / 45.0);
         if (totalPages == 0) totalPages = 1;
         page = Math.max(0, Math.min(page, totalPages - 1));
 
@@ -42,20 +46,23 @@ public class MenuManager {
                 "门管理菜单 (第 " + (page + 1) + "/" + totalPages + " 页)");
 
         int start = page * 45;
-        int end = Math.min(start + 45, doorIds.size());
+        int end = Math.min(start + 45, entries.size());
         for (int i = start; i < end; i++) {
-            String id = doorIds.get(i);
-            DoorData data = plugin.doors.get(id);
+            String worldName = entries.get(i).getKey();
+            String id = entries.get(i).getValue();
+            DoorData data = plugin.getDoor(worldName, id);
+            if (data == null) continue;
+
             ItemStack item = new ItemStack(data.getBlockType());
             ItemMeta meta = item.getItemMeta();
             meta.setDisplayName(ChatColor.YELLOW + "门: " + id);
             List<String> lore = new ArrayList<>();
-            lore.add(ChatColor.GRAY + "世界: " + data.getWorld().getName());
+            lore.add(ChatColor.GRAY + "世界: " + worldName);
             lore.add(ChatColor.GRAY + "坐标: (" + data.getMinX() + "," + data.getMinY() + "," + data.getMinZ() +
                     ") -> (" + data.getMaxX() + "," + data.getMaxY() + "," + data.getMaxZ() + ")");
             lore.add(ChatColor.GRAY + "方块: " + data.getBlockType().name());
             lore.add(ChatColor.GRAY + "状态: " + (data.isOpen() ? ChatColor.GREEN + "关闭" : ChatColor.RED + "开启"));
-            lore.add(ChatColor.GRAY + "绑定按钮数: " + getButtonCount(id));
+            lore.add(ChatColor.GRAY + "绑定按钮数: " + getButtonCount(worldName, id));
             lore.add("");
             lore.add(ChatColor.GOLD + "点击进入管理");
             meta.setLore(lore);
@@ -68,10 +75,8 @@ public class MenuManager {
         inv.setItem(46, createMenuItem(Material.ARROW, ChatColor.AQUA + "下一页"));
         inv.setItem(49, createMenuItem(Material.EMERALD, ChatColor.GREEN + "创建新门",
                 Collections.singletonList(ChatColor.GRAY + "点击使用命令创建")));
-        // 新增：关闭所有门
         inv.setItem(50, createMenuItem(Material.REDSTONE_BLOCK, ChatColor.RED + "关闭所有门",
                 Collections.singletonList(ChatColor.GRAY + "点击使所有门变为关闭状态（方块出现）")));
-        // 新增：开启所有门
         inv.setItem(51, createMenuItem(Material.EMERALD_BLOCK, ChatColor.GREEN + "开启所有门",
                 Collections.singletonList(ChatColor.GRAY + "点击使所有门变为开启状态（方块消失）")));
         inv.setItem(53, createMenuItem(Material.BARRIER, ChatColor.RED + "关闭菜单"));
@@ -79,26 +84,26 @@ public class MenuManager {
         player.openInventory(inv);
         plugin.menuPage.put(player, page);
     }
-    public void openActionMenu(Player player, String doorId) {
-        DoorData data = plugin.doors.get(doorId);
+
+    public void openActionMenu(Player player, String worldName, String doorId) {
+        DoorData data = plugin.getDoor(worldName, doorId);
         if (data == null) {
             player.sendMessage(ChatColor.RED + "该门已不存在！");
             return;
         }
 
-        Inventory inv = Bukkit.createInventory(new DoorActionMenuHolder(doorId), 27, "管理门: " + doorId);
+        Inventory inv = Bukkit.createInventory(new DoorActionMenuHolder(worldName, doorId), 27, "管理门: " + doorId);
 
-        // 门信息
         ItemStack info = new ItemStack(data.getBlockType());
         ItemMeta infoMeta = info.getItemMeta();
         infoMeta.setDisplayName(ChatColor.YELLOW + "门: " + doorId);
         List<String> lore = new ArrayList<>();
-        lore.add(ChatColor.GRAY + "世界: " + data.getWorld().getName());
+        lore.add(ChatColor.GRAY + "世界: " + worldName);
         lore.add(ChatColor.GRAY + "坐标: (" + data.getMinX() + "," + data.getMinY() + "," + data.getMinZ() +
                 ") -> (" + data.getMaxX() + "," + data.getMaxY() + "," + data.getMaxZ() + ")");
         lore.add(ChatColor.GRAY + "方块: " + data.getBlockType().name());
         lore.add(ChatColor.GRAY + "状态: " + (data.isOpen() ? ChatColor.GREEN + "关闭" : ChatColor.RED + "开启"));
-        lore.add(ChatColor.GRAY + "绑定按钮数: " + getButtonCount(doorId));
+        lore.add(ChatColor.GRAY + "绑定按钮数: " + getButtonCount(worldName, doorId));
         infoMeta.setLore(lore);
         info.setItemMeta(infoMeta);
         inv.setItem(13, info);
@@ -109,7 +114,6 @@ public class MenuManager {
                 Collections.singletonList(ChatColor.GRAY + "点击删除此门（不可恢复）")));
         inv.setItem(15, createMenuItem(Material.STONE_BUTTON, ChatColor.GREEN + "绑定按钮",
                 Collections.singletonList(ChatColor.GRAY + "点击进入绑定模式，右键点击按钮")));
-        // 新增传送按钮
         inv.setItem(17, createMenuItem(Material.ENDER_PEARL, ChatColor.LIGHT_PURPLE + "传送到门",
                 Collections.singletonList(ChatColor.GRAY + "点击传送至门顶部")));
         inv.setItem(22, createMenuItem(Material.ARROW, ChatColor.AQUA + "返回主菜单"));
@@ -124,13 +128,13 @@ public class MenuManager {
             else if (slot == 49) {
                 player.closeInventory();
                 player.sendMessage(ChatColor.GREEN + "请使用 /door create 命令创建门");
-            } else if (slot == 50) {  // 关闭所有门
+            } else if (slot == 50) {
                 player.closeInventory();
-                plugin.setAllDoors(true);   // true = 关闭状态（方块出现）
+                plugin.setAllDoors(true);
                 player.sendMessage(ChatColor.GREEN + "已将所有门关闭");
-            } else if (slot == 51) {  // 开启所有门
+            } else if (slot == 51) {
                 player.closeInventory();
-                plugin.setAllDoors(false);  // false = 开启状态（方块消失）
+                plugin.setAllDoors(false);
                 player.sendMessage(ChatColor.GREEN + "已将所有门开启");
             } else if (slot == 53) player.closeInventory();
             return;
@@ -138,20 +142,31 @@ public class MenuManager {
 
         if (slot < 45) {
             ItemMeta meta = current.getItemMeta();
+            List<String> lore = meta.getLore();
+            if (lore == null || lore.isEmpty()) return;
+
+            String worldName = null;
+            String doorId = null;
+            for (String line : lore) {
+                if (line.contains(ChatColor.GRAY + "世界: ")) {
+                    worldName = ChatColor.stripColor(line).replace("世界: ", "");
+                }
+            }
             String displayName = meta.getDisplayName();
             if (displayName.startsWith(ChatColor.YELLOW + "门: ")) {
-                String doorId = displayName.substring((ChatColor.YELLOW + "门: ").length());
-                if (plugin.doors.containsKey(doorId)) {
-                    openActionMenu(player, doorId);
-                } else {
-                    player.sendMessage(ChatColor.RED + "该门已不存在，刷新列表");
-                    openMainMenu(player, page);
-                }
+                doorId = displayName.substring((ChatColor.YELLOW + "门: ").length());
+            }
+            if (worldName != null && doorId != null && plugin.getDoor(worldName, doorId) != null) {
+                openActionMenu(player, worldName, doorId);
+            } else {
+                player.sendMessage(ChatColor.RED + "该门已不存在，刷新列表");
+                openMainMenu(player, page);
             }
         }
     }
-    public void handleActionMenuClick(Player player, String doorId, int slot) {
-        DoorData data = plugin.doors.get(doorId);
+
+    public void handleActionMenuClick(Player player, String worldName, String doorId, int slot) {
+        DoorData data = plugin.getDoor(worldName, doorId);
         if (data == null) {
             player.sendMessage(ChatColor.RED + "该门已不存在，返回主菜单");
             player.closeInventory();
@@ -160,38 +175,37 @@ public class MenuManager {
         }
 
         switch (slot) {
-            case 9: // 开关
+            case 9:
                 if (!data.isAnimating()) {
-                    plugin.toggleDoor(doorId);
+                    plugin.toggleDoor(worldName, doorId);
                     player.sendMessage(ChatColor.GREEN + "门 " + doorId + " 已切换");
                     player.closeInventory();
                 } else {
                     player.sendMessage(ChatColor.RED + "门正在移动，请稍后");
                 }
                 break;
-            case 11: // 删除
+            case 11:
                 player.closeInventory();
-                if (plugin.removeDoor(doorId)) {
+                if (plugin.removeDoorBoolean(worldName, doorId)) {
                     player.sendMessage(ChatColor.GREEN + "门 " + doorId + " 已删除");
                 }
                 openMainMenu(player, 0);
                 break;
-            case 15: // 绑定
+            case 15:
                 player.closeInventory();
                 plugin.bindingPlayers.put(player, doorId);
                 player.sendMessage(ChatColor.GREEN + "请右键点击一个按钮将其绑定到门 " + doorId);
                 break;
-            case 17: // 传送
+            case 17:
                 player.closeInventory();
                 teleportToDoor(player, data);
                 break;
-            case 22: // 返回
+            case 22:
                 openMainMenu(player, 0);
                 break;
         }
     }
 
-    // 新增传送方法
     private void teleportToDoor(Player player, DoorData data) {
         World world = data.getWorld();
         if (!player.getWorld().equals(world)) {
@@ -203,16 +217,14 @@ public class MenuManager {
         int minY = data.getMinY(), maxY = data.getMaxY();
         int minZ = data.getMinZ(), maxZ = data.getMaxZ();
 
-        // 计算门区域水平中心（取整）
         int centerX = (minX + maxX) / 2;
         int centerZ = (minZ + maxZ) / 2;
 
-        // 四个候选传送位置：四个侧面紧贴门区域，高度为 minY（门底部）
         List<Location> candidates = new ArrayList<>();
-        candidates.add(new Location(world, maxX + 1, minY, centerZ)); // +X 方向
-        candidates.add(new Location(world, minX - 1, minY, centerZ)); // -X 方向
-        candidates.add(new Location(world, centerX, minY, maxZ + 1)); // +Z 方向
-        candidates.add(new Location(world, centerX, minY, minZ - 1)); // -Z 方向
+        candidates.add(new Location(world, maxX + 1, minY, centerZ));
+        candidates.add(new Location(world, minX - 1, minY, centerZ));
+        candidates.add(new Location(world, centerX, minY, maxZ + 1));
+        candidates.add(new Location(world, centerX, minY, minZ - 1));
 
         for (Location candidate : candidates) {
             Location safe = findSafeGround(candidate);
@@ -224,7 +236,6 @@ public class MenuManager {
             }
         }
 
-        // 回退方案：传送到门顶部
         double fallbackX = (minX + maxX) / 2.0 + 0.5;
         double fallbackZ = (minZ + maxZ) / 2.0 + 0.5;
         int startY = maxY + 1;
@@ -243,7 +254,6 @@ public class MenuManager {
     }
 
     private Location findSafeGround(Location start) {
-        // 从起始点向下查找最多10格，返回第一个可站立的位置（方块空气、下方固体、头部安全）
         for (int i = 0; i < 10; i++) {
             Location check = start.clone().subtract(0, i, 0);
             Block block = check.getBlock();
@@ -257,8 +267,10 @@ public class MenuManager {
         return null;
     }
 
-    private int getButtonCount(String doorId) {
-        return (int) plugin.buttonToDoor.values().stream().filter(id -> id.equals(doorId)).count();
+    private int getButtonCount(String worldName, String doorId) {
+        return (int) plugin.buttonToDoor.entrySet().stream()
+                .filter(e -> e.getKey().getWorld().getName().equals(worldName) && e.getValue().equals(doorId))
+                .count();
     }
 
     private ItemStack createMenuItem(Material material, String name) {
@@ -272,6 +284,5 @@ public class MenuManager {
         if (lore != null) meta.setLore(lore);
         item.setItemMeta(meta);
         return item;
-    }// 在 MenuManager.java 中添加以下两个方法，并修改 handleActionMenuClick 中的 case 17
-
+    }
 }

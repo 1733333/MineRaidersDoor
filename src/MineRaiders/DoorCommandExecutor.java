@@ -1,7 +1,5 @@
 package MineRaiders;
 
-import MineRaiders.MRD;
-import MineRaiders.MenuManager;
 import org.bukkit.*;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandExecutor;
@@ -38,8 +36,9 @@ public class DoorCommandExecutor implements CommandExecutor {
             case "bind" -> bindButton(sender, args);
             case "unbind" -> unbindButton(sender, args);
             case "menu" -> openMenu(sender);
+            case "reload" -> reload(sender);
             default -> {
-                sender.sendMessage("未知子命令，可用: wand, create, toggle, remove, bind, unbind, menu");
+                sender.sendMessage("未知子命令，可用: wand, create, toggle, remove, bind, unbind, menu, reload");
                 yield false;
             }
         };
@@ -52,15 +51,17 @@ public class DoorCommandExecutor implements CommandExecutor {
         sender.sendMessage(ChatColor.YELLOW + "/door create <id> [blocktype]");
         sender.sendMessage(ChatColor.GRAY + "  使用当前选区创建门，可指定方块类型（默认 POLISHED_TUFF_WALL）。");
         sender.sendMessage(ChatColor.YELLOW + "/door toggle <id>");
-        sender.sendMessage(ChatColor.GRAY + "  开关指定ID的门。");
+        sender.sendMessage(ChatColor.GRAY + "  开关指定ID的门（当前世界）。");
         sender.sendMessage(ChatColor.YELLOW + "/door remove <id>");
-        sender.sendMessage(ChatColor.GRAY + "  删除指定ID的门。");
+        sender.sendMessage(ChatColor.GRAY + "  删除指定ID的门（当前世界）。");
         sender.sendMessage(ChatColor.YELLOW + "/door bind <id>");
-        sender.sendMessage(ChatColor.GRAY + "  进入绑定模式，手持物品右键点击按钮绑定到该门。");
+        sender.sendMessage(ChatColor.GRAY + "  进入绑定模式，手持物品右键点击按钮绑定到该门（当前世界）。");
         sender.sendMessage(ChatColor.YELLOW + "/door unbind");
         sender.sendMessage(ChatColor.GRAY + "  解除按钮绑定模式。");
         sender.sendMessage(ChatColor.YELLOW + "/door menu");
-        sender.sendMessage(ChatColor.GRAY + "  打开门管理菜单。");
+        sender.sendMessage(ChatColor.GRAY + "  打开门管理菜单（显示所有世界的门）。");
+        sender.sendMessage(ChatColor.YELLOW + "/door reload");
+        sender.sendMessage(ChatColor.GRAY + "  重新加载门和按钮配置文件。");
         sender.sendMessage(ChatColor.GOLD + "===========================");
     }
 
@@ -93,8 +94,8 @@ public class DoorCommandExecutor implements CommandExecutor {
             return false;
         }
         String id = args[1];
-        if (plugin.doors.containsKey(id)) {
-            p.sendMessage("ID已存在，请换一个");
+        if (plugin.getDoor(p.getWorld(), id) != null) {
+            p.sendMessage("当前世界已存在此ID的门");
             return false;
         }
 
@@ -142,29 +143,38 @@ public class DoorCommandExecutor implements CommandExecutor {
     }
 
     private boolean toggleDoor(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            sender.sendMessage("只有玩家可以使用此命令");
+            return false;
+        }
         if (args.length != 2) {
             sender.sendMessage("用法: /door toggle <id>");
             return false;
         }
         String id = args[1];
-        if (!plugin.doors.containsKey(id)) {
-            sender.sendMessage("门不存在");
+        DoorData data = plugin.getDoor(p.getWorld(), id);
+        if (data == null) {
+            sender.sendMessage("当前世界不存在此ID的门");
             return false;
         }
-        plugin.toggleDoor(id);
+        plugin.toggleDoor(p.getWorld().getName(), id);
         return true;
     }
 
     private boolean removeDoor(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player p)) {
+            sender.sendMessage("只有玩家可以使用此命令");
+            return false;
+        }
         if (args.length != 2) {
             sender.sendMessage("用法: /door remove <id>");
             return false;
         }
         String id = args[1];
-        if (plugin.removeDoor(id)) {
+        if (plugin.removeDoorBoolean(p.getWorld().getName(), id)) {
             sender.sendMessage("门已删除，ID: " + id);
         } else {
-            sender.sendMessage("门不存在");
+            sender.sendMessage("当前世界不存在此ID的门");
         }
         return true;
     }
@@ -179,8 +189,9 @@ public class DoorCommandExecutor implements CommandExecutor {
             return false;
         }
         String id = args[1];
-        if (!plugin.doors.containsKey(id)) {
-            sender.sendMessage("门不存在");
+        DoorData data = plugin.getDoor(p.getWorld(), id);
+        if (data == null) {
+            sender.sendMessage("当前世界不存在此ID的门");
             return false;
         }
         plugin.bindingPlayers.put(p, id);
@@ -193,7 +204,7 @@ public class DoorCommandExecutor implements CommandExecutor {
             sender.sendMessage("只有玩家可以使用此命令");
             return false;
         }
-        plugin.bindingPlayers.put(p, null); // null 表示解除绑定模式
+        plugin.bindingPlayers.put(p, null);
         p.sendMessage(ChatColor.GREEN + "请右键点击一个按钮以解除其绑定");
         return true;
     }
@@ -204,6 +215,16 @@ public class DoorCommandExecutor implements CommandExecutor {
             return false;
         }
         new MenuManager(plugin).openMainMenu(p, 0);
+        return true;
+    }
+
+    private boolean reload(CommandSender sender) {
+        if (sender instanceof Player && !sender.isOp()) {
+            sender.sendMessage(ChatColor.RED + "你没有权限使用此命令");
+            return true;
+        }
+        plugin.reload();
+        sender.sendMessage(ChatColor.GREEN + "门配置已重新加载");
         return true;
     }
 }

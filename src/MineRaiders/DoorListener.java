@@ -18,6 +18,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 
 import java.util.List;
+import java.util.Map;
 
 public class DoorListener implements Listener {
     private final MRD plugin;
@@ -28,19 +29,12 @@ public class DoorListener implements Listener {
         this.menuManager = new MenuManager(plugin);
     }
 
-    /**
-     * 判断物品是否为指定材质门的钥匙（检查 Lore 中是否包含材质名，不区分大小写，忽略颜色）
-     *
-     * @param item          玩家手持物品
-     * @param doorMaterial  门的材质
-     * @return true 如果是钥匙且材质匹配
-     */
     private boolean isKeyForMaterial(ItemStack item, Material doorMaterial) {
         if (item == null || !item.hasItemMeta()) return false;
         ItemMeta meta = item.getItemMeta();
         if (!meta.hasLore()) return false;
         List<String> lore = meta.getLore();
-        String materialName = doorMaterial.name(); // 例如 "IRON_DOOR"
+        String materialName = doorMaterial.name();
         return lore.stream().anyMatch(line ->
                 ChatColor.stripColor(line).equalsIgnoreCase(materialName));
     }
@@ -82,7 +76,7 @@ public class DoorListener implements Listener {
             return;
         }
 
-        // ========== 2. 按钮绑定与触发处理（仅当点击的是按钮时） ==========
+        // ========== 2. 按钮绑定与触发处理 ==========
         if (e.getAction() == Action.RIGHT_CLICK_BLOCK && block.getBlockData() instanceof Switch) {
             // 2.1 绑定模式处理
             if (plugin.bindingPlayers.containsKey(p)) {
@@ -100,11 +94,20 @@ public class DoorListener implements Listener {
                     // 绑定门到按钮
                     if (plugin.buttonToDoor.containsKey(loc)) {
                         p.sendMessage(ChatColor.RED + "该按钮已被绑定，请先解除");
-                    } else {
-                        plugin.buttonToDoor.put(loc, doorId);
-                        p.sendMessage(ChatColor.GREEN + "按钮已绑定到门 " + doorId);
-                        plugin.saveButtons();
+                        return;
                     }
+                    DoorData data = plugin.getDoor(block.getWorld(), doorId);
+                    if (data == null) {
+                        p.sendMessage(ChatColor.RED + "门不存在或不在当前世界");
+                        return;
+                    }
+                    if (!data.getWorld().equals(block.getWorld())) {
+                        p.sendMessage(ChatColor.RED + "门和按钮必须在同一世界");
+                        return;
+                    }
+                    plugin.buttonToDoor.put(loc, doorId);
+                    p.sendMessage(ChatColor.GREEN + "按钮已绑定到门 " + doorId);
+                    plugin.saveButtons();
                 }
                 return;
             }
@@ -112,7 +115,7 @@ public class DoorListener implements Listener {
             // 2.2 普通按钮点击触发门
             String doorId = plugin.buttonToDoor.get(loc);
             if (doorId != null) {
-                DoorData data = plugin.doors.get(doorId);
+                DoorData data = plugin.getDoor(loc.getWorld(), doorId);
                 if (data == null) {
                     plugin.buttonToDoor.remove(loc);
                     plugin.saveButtons();
@@ -122,36 +125,36 @@ public class DoorListener implements Listener {
                     p.sendMessage(ChatColor.RED + "门正在移动，请稍后");
                     return;
                 }
-                plugin.toggleDoor(doorId);
+                plugin.toggleDoor(loc.getWorld().getName(), doorId);
                 p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1, 1);
                 return;
             }
         }
 
-        // ========== 3. 新增：手持钥匙右键门（门的材质与钥匙 lore 中的材质匹配） ==========
+        // ========== 3. 手持钥匙右键门 ==========
         if (e.getAction() == Action.RIGHT_CLICK_BLOCK) {
-            // 遍历所有门，查找当前方块是否属于某个门
-            for (java.util.Map.Entry<String, DoorData> entry : plugin.doors.entrySet()) {
-                DoorData data = entry.getValue();
-                if (!data.getWorld().equals(p.getWorld())) continue;
-                // 检查坐标是否在门区域内
-                if (loc.getBlockX() < data.getMinX() || loc.getBlockX() > data.getMaxX() ||
-                        loc.getBlockY() < data.getMinY() || loc.getBlockY() > data.getMaxY() ||
-                        loc.getBlockZ() < data.getMinZ() || loc.getBlockZ() > data.getMaxZ()) {
-                    continue;
-                }
+            for (Map.Entry<String, Map<String, DoorData>> worldEntry : plugin.doors.entrySet()) {
+                String worldName = worldEntry.getKey();
+                for (Map.Entry<String, DoorData> doorEntry : worldEntry.getValue().entrySet()) {
+                    DoorData data = doorEntry.getValue();
+                    if (!data.getWorld().equals(p.getWorld())) continue;
+                    if (loc.getBlockX() < data.getMinX() || loc.getBlockX() > data.getMaxX() ||
+                            loc.getBlockY() < data.getMinY() || loc.getBlockY() > data.getMaxY() ||
+                            loc.getBlockZ() < data.getMinZ() || loc.getBlockZ() > data.getMaxZ()) {
+                        continue;
+                    }
 
-                // 方块属于这个门，检查手持物品是否为匹配该门材质的钥匙
-                if (isKeyForMaterial(item, data.getBlockType())) {
-                    if (data.isAnimating()) {
-                        p.sendMessage(ChatColor.RED + "门正在移动，请稍后");
+                    if (isKeyForMaterial(item, data.getBlockType())) {
+                        if (data.isAnimating()) {
+                            p.sendMessage(ChatColor.RED + "门正在移动，请稍后");
+                            return;
+                        }
+                        plugin.toggleDoor(worldName, doorEntry.getKey());
+                        p.sendMessage(ChatColor.GREEN + "你使用钥匙打开了门。");
+                        p.playSound(p.getLocation(), Sound.BLOCK_IRON_DOOR_OPEN, 1, 1);
+                        e.setCancelled(true);
                         return;
                     }
-                    plugin.toggleDoor(entry.getKey());
-                    p.sendMessage(ChatColor.GREEN + "你使用钥匙打开了门。");
-                    p.playSound(p.getLocation(), Sound.BLOCK_IRON_DOOR_OPEN, 1, 1);
-                    e.setCancelled(true);
-                    return;
                 }
             }
         }
@@ -169,7 +172,8 @@ public class DoorListener implements Listener {
         } else if (holder instanceof MenuManager.DoorActionMenuHolder) {
             e.setCancelled(true);
             if (e.getCurrentItem() == null || !e.getCurrentItem().hasItemMeta()) return;
-            menuManager.handleActionMenuClick(p, ((MenuManager.DoorActionMenuHolder) holder).getDoorId(), e.getRawSlot());
+            menuManager.handleActionMenuClick(p, ((MenuManager.DoorActionMenuHolder) holder).getWorldName(),
+                    ((MenuManager.DoorActionMenuHolder) holder).getDoorId(), e.getRawSlot());
         }
     }
 
