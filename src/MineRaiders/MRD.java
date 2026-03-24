@@ -36,6 +36,7 @@ public class MRD extends JavaPlugin {
         loadButtons();
 
         Objects.requireNonNull(getCommand("door")).setExecutor(new DoorCommandExecutor(this));
+        Objects.requireNonNull(getCommand("door")).setTabCompleter(new DoorCommandExecutor(this));;
         getServer().getPluginManager().registerEvents(new DoorListener(this), this);
 
         getLogger().info("门插件已启用");
@@ -46,6 +47,7 @@ public class MRD extends JavaPlugin {
         saveDoors();
         saveButtons();
         getServer().getScheduler().cancelTasks(this);
+        backupFiles();
         getLogger().info("门插件已禁用");
     }
 
@@ -381,4 +383,39 @@ public class MRD extends JavaPlugin {
         }
         return true;
     }
+    private void backupFiles() {
+        File dataFolder = getDataFolder();
+        File backupDir = new File(dataFolder, "backup");
+        if (!backupDir.exists()) {
+            backupDir.mkdirs();
+        }
+
+        // 精确到分钟的时间戳，格式: 20260324_1430
+        String timestamp = new java.text.SimpleDateFormat("yyyyMMdd_HHmm").format(new java.util.Date());
+
+        File doorsFile = new File(dataFolder, "doors.yml");
+        if (doorsFile.exists()) {
+            File backupDoors = new File(backupDir, "doors_" + timestamp + ".yml");
+            try {
+                java.nio.file.Files.copy(doorsFile.toPath(), backupDoors.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                getLogger().info("已备份 doors.yml 到 " + backupDoors.getName());
+            } catch (IOException e) {
+                getLogger().warning("备份 doors.yml 失败: " + e.getMessage());
+            }
+        }
+
+        File buttonsFile = new File(dataFolder, "buttons.yml");
+        if (buttonsFile.exists()) {
+            File backupButtons = new File(backupDir, "buttons_" + timestamp + ".yml");
+            try {
+                java.nio.file.Files.copy(buttonsFile.toPath(), backupButtons.toPath(),
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                getLogger().info("已备份 buttons.yml 到 " + backupButtons.getName());
+            } catch (IOException e) {
+                getLogger().warning("备份 buttons.yml 失败: " + e.getMessage());
+            }
+        }
+    }
+
 }
