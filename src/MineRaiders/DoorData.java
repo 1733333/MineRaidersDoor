@@ -1,5 +1,6 @@
 package MineRaiders;
 
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.scheduler.BukkitTask;
@@ -37,4 +38,10 @@ public class DoorData {
     public void setAnimating(boolean animating) { this.animating = animating; }
     public BukkitTask getTask() { return task; }
     public void setTask(BukkitTask task) { this.task = task; }
+    public Location getMiddleLocation(){
+        return new Location(world,
+                (minX + maxX) / 2.0,
+                (minY + maxY) / 2.0,
+                (minZ + maxZ) / 2.0);
+    }
 }

@@ -283,8 +283,8 @@ public class MRD extends JavaPlugin {
                     f = 0.8f;
                 }
                 Location center = new Location(world, (minX + maxX) / 2.0, y[0], (minZ + maxZ) / 2.0);
-                world.playSound(center, s, 1, f);
-                world.playSound(center, s, 1, f);
+                world.playSound(center, s, 3, f);
+                world.playSound(center, s, 3, f);
 
                 y[0] += direction[0];
                 currentLayer[0]++;
@@ -329,7 +329,7 @@ public class MRD extends JavaPlugin {
 
     private void setWallSide(Wall wall, Block block, BlockFace face) {
         Block neighbor = block.getRelative(face);
-        if (neighbor.getType().isSolid()) {
+        if (isFullBlock(neighbor)) {
             wall.setHeight(face, Wall.Height.TALL);
         } else {
             wall.setHeight(face, Wall.Height.NONE);
@@ -351,5 +351,34 @@ public class MRD extends JavaPlugin {
         loadDoors();
         loadButtons();
         getLogger().info("门配置已重新加载");
+    }
+    public boolean isFullBlock(Block b){
+        Material type = b.getType();
+        String name = type.toString();
+        if(type == Material.FIRE)return false;
+        if(type == Material.AIR)return false;
+        if(type == Material.LIGHT)return false;
+        if(type == Material.IRON_BARS)return false;
+        if(type == Material.POWDER_SNOW)return false;
+        if(!type.isSolid())return false;
+        if(name.contains("BUTTON")) {
+            return false;
+        }
+        if(name.contains("PANE")) {
+            return false;
+        }
+        if(name.contains("TRAPDOOR")){
+            return false;
+        }
+        if(name.contains("CARPET")){
+            return false;
+        }
+        if(name.contains("SIGN")){
+            return false;
+        }
+        if(name.contains("FENCE")){
+            return false;
+        }
+        return true;
     }
 }

@@ -1,9 +1,8 @@
 package MineRaiders;
 
-import org.bukkit.ChatColor;
-import org.bukkit.Location;
-import org.bukkit.Material;
-import org.bukkit.Sound;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
+import org.bukkit.*;
 import org.bukkit.block.Block;
 import org.bukkit.block.data.type.Switch;
 import org.bukkit.entity.Player;
@@ -125,8 +124,16 @@ public class DoorListener implements Listener {
                     p.sendMessage(ChatColor.RED + "门正在移动，请稍后");
                     return;
                 }
+                Location midLoc = data.getMiddleLocation();
+                double distance = loc.distanceSquared(midLoc);
+                String message;
+                if(distance > 10) {
+                    message = ChatColor.GREEN + "远处传来门移动的声音";
+                }else {
+                    message = ChatColor.AQUA + "门正在移动";
+                }
+                p.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacy(message));
                 plugin.toggleDoor(loc.getWorld().getName(), doorId);
-                p.playSound(p.getLocation(), Sound.UI_BUTTON_CLICK, 1, 1);
                 return;
             }
         }
@@ -152,6 +159,11 @@ public class DoorListener implements Listener {
                         plugin.toggleDoor(worldName, doorEntry.getKey());
                         p.sendMessage(ChatColor.GREEN + "你使用钥匙打开了门。");
                         p.playSound(p.getLocation(), Sound.BLOCK_IRON_DOOR_OPEN, 1, 1);
+                        p.playSound(p.getLocation(), Sound.ITEM_ARMOR_EQUIP_NETHERITE, 1, 1);
+                        if(p.getGameMode() != GameMode.CREATIVE && p.getGameMode() != GameMode.SPECTATOR){
+                            int amount = item.getAmount();
+                            item.setAmount(amount - 1);
+                        }
                         e.setCancelled(true);
                         return;
                     }
