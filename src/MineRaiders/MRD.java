@@ -417,5 +417,31 @@ public class MRD extends JavaPlugin {
             }
         }
     }
+    /**
+     * 判断某个位置是否属于任何门（即该位置位于门的区域内）
+     * @param loc 要检查的位置
+     * @param plugin MRD插件实例，用于访问门数据
+     * @return 如果该位置在某个门区域内则返回true，否则返回false
+     */
+    public static boolean isLocationInDoor(Location loc, MRD plugin) {
+        if (loc == null || plugin == null) return false;
+
+        String worldName = loc.getWorld().getName();
+        Map<String, DoorData> worldDoors = plugin.doors.get(worldName);
+        if (worldDoors == null) return false;
+
+        int x = loc.getBlockX();
+        int y = loc.getBlockY();
+        int z = loc.getBlockZ();
+
+        for (DoorData door : worldDoors.values()) {
+            if (x >= door.getMinX() && x <= door.getMaxX() &&
+                    y >= door.getMinY() && y <= door.getMaxY() &&
+                    z >= door.getMinZ() && z <= door.getMaxZ()) {
+                return true;
+            }
+        }
+        return false;
+    }
 
 }
